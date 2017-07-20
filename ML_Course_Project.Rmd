@@ -1,0 +1,161 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Antonio A. Malanda"
+date: "July, 2017"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Data
+
+The training data for this project are available here:
+  
+  https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+  
+  https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+## Objective
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+## Loading and preprocessing the data
+
+### Data Loading
+
+First of all we load the required libraries:
+  
+```{r echo = TRUE}
+library(caret)
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(knitr)
+```
+
+Now, we download the training and testing datasets from the given URLs:
+
+```{r echo = TRUE}
+train_Url <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_Url <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training_data <- read.csv(url(train_Url), na.strings=c("NA","#DIV/0",""))
+testing_data <- read.csv(url(test_Url), na.strings=c("NA","#DIV/0",""))
+
+dim(training_data)
+dim(testing_data)
+```
+
+### Data Cleaning
+
+In order to clean the data we have followed the next steps:
+
+1. Remove the predictors with missing values.
+2. Remove the predictors zero or near to zero variance.
+3. Remove unrelevant variables (like time stamp, window variables or user name).
+
+```{r echo = TRUE}
+# Remove predictors that contain any missing values
+cols_without_missing_values <- colSums(is.na(testing_data)) == 0
+training_data <- training_data[, cols_without_missing_values]
+testing_data <- testing_data[, cols_without_missing_values]
+
+# Remove NearZeroVariance variables
+nzv <- nearZeroVar(testing_data, saveMetrics=TRUE)
+training_data <- training_data[,nzv$nzv==FALSE]
+testing_data <- testing_data[,nzv$nzv==FALSE]
+
+# Remove remove unrelevant variables
+training_data <- training_data[, -c(1:6)]
+testing_data <- testing_data[, -c(1:6)]
+```
+
+### Exploratory Analysis
+
+At this point, we have 52 predictor variables. The next figure show de correlation among all these predictors.
+
+```{r echo = TRUE}
+corrplot.mixed(cor(training_data[,-c(53)]), lower="circle", upper="color", 
+               tl.pos="lt", diag="n", order="hclust", hclust.method="complete")
+```
+
+In the same way, the figure below shows the relation between the 52 predictors and the outcome variable.
+
+```{r echo = TRUE}
+featurePlot(training_data[,-c(53)], training_data[,c(53)], "strip")
+```
+
+### Data Splitting
+
+In order to get out-of-sample errors, we split the resulting training dataset into a training set (70%) and a validation set (30%).
+
+```{r echo = TRUE}
+set.seed(282828) 
+inTrain <- createDataPartition(training_data$classe, p = 0.7, list = FALSE)
+train <- training_data[inTrain, ]
+valid <- training_data[-inTrain, ]
+```
+
+## Prediction Algorithms
+
+In order to predict the outcome we have used two differente algorithms:
+
+1. Decision Trees.
+2. Random Forests.
+
+### Algorithm 1: Decision Trees
+
+```{r echo = TRUE}
+set.seed(282828)
+train_control <- trainControl(method = "cv", number = 10)
+mod_DT <- train(classe ~., method="rpart", data=train, trControl = train_control)
+print(mod_DT, digits = 4)
+fancyRpartPlot(mod_DT$finalModel)
+```
+
+Once we have developed the model, we validate its accuracy using the validation dataset as follows:
+
+```{r echo = TRUE}
+Conf_Mat_DT <- confusionMatrix(valid$classe, predict(mod_DT, newdata = valid))
+Conf_Mat_DT
+```
+
+Using the validation dataset we conclude that the accuracy obtained with this model is too low, so using Decision Trees to predict the outcome does not seem to be a suitable method.
+
+### Algorithm 2: Random Forests
+
+```{r echo = TRUE}
+set.seed(282828)
+mod_RF <- train(classe ~ ., method = "rf", data = train, trControl = train_control)
+print(mod_RF, digits = 4)
+```
+
+```{r echo = TRUE}
+Conf_Mat_RF <- confusionMatrix(valid$classe, predict(mod_RF, newdata = valid))
+Conf_Mat_RF
+```
+
+As we can see, the Random Forest based methods is much better than the Decision Tree based Method. The accuracy obtained in the validation dataset is 0.99.
+
+## Prediction on Test Dataset
+
+Once we have selected the model, we run our model on the Test Dataset to make our predictions.
+
+```{r echo = TRUE}
+prediction_test <- predict(mod_RF, testing_data)
+prediction_test
+```
